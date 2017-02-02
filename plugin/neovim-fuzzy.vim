@@ -55,6 +55,26 @@ function! s:fuzzy_source.find_contents() dict
     call s:fuzzy_err_noexec()
 endfunction
 
+function! s:fuzzy_open_dir(root) abort
+    let root = empty(a:root) ? s:fuzzy_getroot() : a:root
+    exe 'lcd' root
+
+    " Get open buffers.
+    let bufs = filter(range(1, bufnr('$')),
+                \ 'buflisted(v:val) && bufnr("%") != v:val && bufnr("#") != v:val')
+    let bufs = map(bufs, 'expand(bufname(v:val))')
+    call reverse(bufs)
+
+    " Add the '#' buffer at the head of the list.
+    if bufnr('#') > 0 && bufnr('%') != bufnr('#')
+        call insert(bufs, expand(bufname('#')))
+    endif
+
+    " Save a list of files the find command should ignore.
+    let ignorelist = !empty(bufname('%')) ? bufs + [expand(bufname('%'))] : bufs
+    return bufs + ignorelist
+endfunction
+
 "
 " local from file-list and tags
 "
@@ -69,8 +89,13 @@ for i in g:fuzzy_file_list
     endif
 endfor
 
+" @root is a file name
 function! s:local.find(root, ignorelist) dict
-    return systemlist('cat '. s:local.path)
+    if empty(a:root)
+        return systemlist('cat '. s:local.path)
+    else
+        return systemlist("grep '". a:root. "' ". s:local.path. "| grep -v '". expand('%'). "'")
+    endif
 endfunction
 
 function! s:local.find_contents(query) dict
@@ -110,10 +135,21 @@ endfunction
 let s:ag = { 'path': 'ag' }
 
 function! s:ag.find(root, ignorelist) dict
-    let ignorefile = tempname()
-    call writefile(a:ignorelist, ignorefile, 'w')
-    return systemlist(
-                \ s:ag.path . " --silent --nocolor -g '' -Q --path-to-agignore " . ignorefile . ' ' . a:root)
+    let result = []
+    try
+        let ignorelist = s:fuzzy_open_dir(a:root)
+        let path = '.'
+        let ignorefile = tempname()
+        call writefile(a:ignorelist + ignorelist, ignorefile, 'w')
+        let result = systemlist(
+                    \ s:ag.path . " --silent --nocolor -g '' -Q --path-to-agignore " . ignorefile . ' ' . path)
+    catch
+        echoerr v:exception
+        return result
+    finally
+        lcd -
+        return result
+    endtry
 endfunction
 
 function! s:ag.find_contents(query) dict
@@ -121,22 +157,41 @@ function! s:ag.find_contents(query) dict
     return systemlist(s:ag.path . " --noheading --nogroup --nocolor -S " . shellescape(query) . " .")
 endfunction
 
+function! s:ag.find_symbol(type, query) dict
+    return s:ag.find_contents(a:query)
+endfunction
 "
 " rg (ripgrep)
 "
 let s:rg = { 'path': 'rg' }
 
 function! s:rg.find(root, ignorelist) dict
-    let ignores = []
-    for str in a:ignorelist
-        call add(ignores, printf("-g '!%s'", str))
-    endfor
-    return systemlist(s:rg.path . " --color never --files --fixed-strings " . join(ignores, ' ') . ' ' . a:root . ' 2>/dev/null')
+    let result = []
+    try
+        let ignorelist = s:fuzzy_open_dir(a:root)
+        let path = '.'
+        let ignorelist += a:ignorelist
+        let ignores = []
+        for str in ignorelist
+            call add(ignores, printf("-g '!%s'", str))
+        endfor
+        let result = systemlist(s:rg.path . " --color never --files --fixed-strings " . join(ignores, ' ') . ' ' . path . ' 2>/dev/null')
+    catch
+        echoerr v:exception
+        return result
+    finally
+        lcd -
+        return result
+    endtry
 endfunction
 
 function! s:rg.find_contents(query) dict
     let query = empty(a:query) ? '.' : shellescape(a:query)
     return systemlist(s:rg.path . " -n --no-heading --color never -S " . query . " . 2>/dev/null")
+endfunction
+
+function! s:rg.find_symbol(type, query) dict
+    return s:rg.find_contents(a:query)
 endfunction
 
 " Set the finder based on available binaries.
@@ -162,12 +217,16 @@ function! s:fuzzy_kill()
 endfunction
 
 function! s:fuzzy_grep(str) abort
+    let contents = []
     try
         let contents = s:fuzzy_source.find_contents(a:str)
     catch
         echoerr v:exception
         return
     endtry
+    if empty(contents)
+        return
+    endif
 
     let opts = { 'lines': 12, 'statusfmt': 'FuzzyGrep %s (%d results)', 'root': '.' }
 
@@ -184,12 +243,16 @@ function! s:fuzzy_grep(str) abort
 endfunction
 
 function! s:fuzzy_symbol(type, str) abort
+    let contents = []
     try
         let contents = s:fuzzy_source.find_symbol(a:type, a:str)
     catch
         echoerr v:exception
         return
     endtry
+    if empty(contents)
+        return
+    endif
 
     let opts = { 'lines': 12, 'statusfmt': 'FuzzySymbol %s (%d results)', 'root': '.' }
 
@@ -206,36 +269,14 @@ function! s:fuzzy_symbol(type, str) abort
 endfunction
 
 function! s:fuzzy_open(root) abort
-    let root = empty(a:root) ? s:fuzzy_getroot() : a:root
-    exe 'lcd' root
-
-    " Get open buffers.
-    let bufs = filter(range(1, bufnr('$')),
-                \ 'buflisted(v:val) && bufnr("%") != v:val && bufnr("#") != v:val')
-    let bufs = map(bufs, 'expand(bufname(v:val))')
-    call reverse(bufs)
-
-    " Add the '#' buffer at the head of the list.
-    if bufnr('#') > 0 && bufnr('%') != bufnr('#')
-        call insert(bufs, expand(bufname('#')))
-    endif
-
-    " Save a list of files the find command should ignore.
-    let ignorelist = !empty(bufname('%')) ? bufs + [expand(bufname('%'))] : bufs
-
-    " Get all files, minus the open buffers.
-    try
-        let files = s:fuzzy_source.find('.', ignorelist)
-    catch
-        echoerr v:exception
+    let result = s:fuzzy_source.find(a:root, [])
+    if empty(result)
         return
-    finally
-        lcd -
-    endtry
-
-    " Put it all together.
-    let result = bufs + files
-
+    endif
+    let root = ''
+    if isdirectory(a:root)
+        let root = a:root
+    endif
     let opts = { 'lines': 12, 'statusfmt': 'FuzzyOpen %s (%d files)', 'root': root }
     function! opts.handler(result)
         return { 'name': join(a:result) }
@@ -276,9 +317,13 @@ function! s:fuzzy(choices, opts) abort
         let result = readfile(self.outputs)
         if !empty(result)
             let file = self.handler(result)
-            exe 'lcd' self.root
-            silent execute g:fuzzy_opencmd expand(fnameescape(file.name))
-            lcd -
+            if isdirectory(self.root)
+                exe 'lcd' self.root
+                silent execute g:fuzzy_opencmd expand(fnameescape(file.name))
+                lcd -
+            else
+                silent execute g:fuzzy_opencmd expand(fnameescape(file.name))
+            endif
             if has_key(file, 'lnum')
                 silent execute file.lnum
                 normal! zz
