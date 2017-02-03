@@ -58,6 +58,9 @@ endfunction
 function! s:fuzzy_open_dir(root) abort
     let root = empty(a:root) ? s:fuzzy_getroot() : a:root
     exe 'lcd' root
+    " If the list include opened buffer, return here
+    " Otherwise, rem this return
+    return []
 
     " Get open buffers.
     let bufs = filter(range(1, bufnr('$')),
@@ -268,16 +271,34 @@ function! s:fuzzy_symbol(type, str) abort
     return s:fuzzy(contents, opts)
 endfunction
 
+
+function! s:fuzzy_open_file(root, file, lnum) abort
+    if isdirectory(a:root)
+        exe 'lcd' a:root
+        silent execute g:fuzzy_opencmd expand(fnameescape(a:file))
+        lcd -
+    else
+        silent execute g:fuzzy_opencmd expand(fnameescape(a:file))
+    endif
+    if !empty(a:lnum)
+        silent execute a:lnum
+        normal! zz
+    endif
+endfunction
+
+
 function! s:fuzzy_open(root) abort
     let result = s:fuzzy_source.find(a:root, [])
-    if empty(result)
+    let result_len = len(result)
+    if result_len == 0
+        return
+    elseif result_len == 1
+        call s:fuzzy_open_file(a:root, join(result), '')
         return
     endif
-    let root = ''
-    if isdirectory(a:root)
-        let root = a:root
-    endif
-    let opts = { 'lines': 12, 'statusfmt': 'FuzzyOpen %s (%d files)', 'root': root }
+
+    " multiple result feed to fuzzy
+    let opts = { 'lines': 12, 'statusfmt': 'FuzzyOpen %s (%d files)', 'root': a:root }
     function! opts.handler(result)
         return { 'name': join(a:result) }
     endfunction
@@ -317,17 +338,11 @@ function! s:fuzzy(choices, opts) abort
         let result = readfile(self.outputs)
         if !empty(result)
             let file = self.handler(result)
-            if isdirectory(self.root)
-                exe 'lcd' self.root
-                silent execute g:fuzzy_opencmd expand(fnameescape(file.name))
-                lcd -
-            else
-                silent execute g:fuzzy_opencmd expand(fnameescape(file.name))
-            endif
+            let lnum = ''
             if has_key(file, 'lnum')
-                silent execute file.lnum
-                normal! zz
+                let lnum = file.lnum
             endif
+            call s:fuzzy_open_file(self.root, file.name, lnum)
         endif
     endfunction
 
