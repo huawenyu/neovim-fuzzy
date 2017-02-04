@@ -316,7 +316,7 @@ function! s:fuzzy(choices, opts) abort
     let outputs = tempname()
 
     if !executable('fzy')
-        echoerr "Fuzzy: the executable 'fzy' was not found in your path"
+        echoerr "Fuzzy: the executable 'fzy' was not found, https://github.com/jhawthorn/fzy"
         return
     endif
 
