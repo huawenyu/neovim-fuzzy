@@ -257,7 +257,12 @@ function! s:fuzzy_symbol(type, str) abort
         return
     endif
 
-    let opts = { 'lines': 12, 'statusfmt': 'FuzzySymbol %s (%d results)', 'root': '.' }
+    if a:type == 0
+        let fzyname = 'fzyFunction'
+    else
+        let fzyname = 'fzySymbol'
+    endif
+    let opts = { 'lines': 12, 'statusfmt': fzyname. ' %s (%d results)', 'root': '.' }
 
     function! opts.handler(result) abort
         let parts = split(join(a:result), ' ')
