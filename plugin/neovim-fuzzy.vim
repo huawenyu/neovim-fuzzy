@@ -112,7 +112,7 @@ function! s:local.find_symbol(type, query) dict
     let query= empty(a:query) ? '.' : a:query
     let tagfile = ''
     if !exists('g:fuzzy_file_tag')
-        let g:fuzzy_file_tag = ["tags.x", "tags", ".tags.x", ".tags"]
+        let g:fuzzy_file_tag = ["tagx", ".tagx"]
     endif
     for i in g:fuzzy_file_tag
         if filereadable(i)
@@ -121,7 +121,7 @@ function! s:local.find_symbol(type, query) dict
         endif
     endfor
     if empty(tagfile)
-        throw "tags file not exist!"
+        throw "tagx file not exist!"
     endif
 
     " other symbols
