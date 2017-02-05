@@ -16,6 +16,7 @@ endif
 if !exists("g:fuzzy_rootcmds")
     let g:fuzzy_rootcmds = [
                 \ 'git rev-parse --show-toplevel',
+                \ 'svn info . | grep -F "Working Copy Root Path:"',
                 \ 'hg root'
                 \ ]
 endif
@@ -24,10 +25,12 @@ let s:fuzzy_job_id = 0
 let s:fuzzy_prev_window = -1
 let s:fuzzy_prev_window_height = -1
 let s:fuzzy_bufnr = -1
-let s:fuzzy_source = {}
+let s:fuzzy_source = {'name': 'abstract'}
 
+" Only suppot unix-like path: /this/is/dir
 function! s:strip(str)
-    return substitute(a:str, '\n*$', '', 'g')
+    let path = substitute(a:str, '\n*$', '', 'g')
+    return matchstr(path, '/\p\{-}\ \?$')
 endfunction
 
 function! s:fuzzy_getroot()
@@ -81,13 +84,13 @@ endfunction
 "
 " local from file-list and tags
 "
-let s:local = { 'path': '' }
+let s:local = { 'name': 'local', 'path': '' }
 if !exists('g:fuzzy_file_list')
     let g:fuzzy_file_list = ['cscope.files']
 endif
 for i in g:fuzzy_file_list
     if filereadable(i)
-        let s:local = { 'path': i }
+        let s:local.path = i
         break
     endif
 endfor
@@ -135,24 +138,10 @@ endfunction
 "
 " ag (the silver searcher)
 "
-let s:ag = { 'path': 'ag' }
+let s:ag = { 'name': 'ag', 'path': 'ag' }
 
 function! s:ag.find(root, ignorelist) dict
-    let result = []
-    try
-        let ignorelist = s:fuzzy_open_dir(a:root)
-        let path = '.'
-        let ignorefile = tempname()
-        call writefile(a:ignorelist + ignorelist, ignorefile, 'w')
-        let result = systemlist(
-                    \ s:ag.path . " --silent --nocolor -g '' -Q --path-to-agignore " . ignorefile . ' ' . path)
-    catch
-        echoerr v:exception
-        return result
-    finally
-        lcd -
-        return result
-    endtry
+    return systemlist(s:ag.path . " -l --silent --nocolor -g ''")
 endfunction
 
 function! s:ag.find_contents(query) dict
@@ -166,26 +155,16 @@ endfunction
 "
 " rg (ripgrep)
 "
-let s:rg = { 'path': 'rg' }
+let s:rg = { 'name': 'rg', 'path': 'rg' }
 
 function! s:rg.find(root, ignorelist) dict
-    let result = []
-    try
-        let ignorelist = s:fuzzy_open_dir(a:root)
-        let path = '.'
-        let ignorelist += a:ignorelist
-        let ignores = []
-        for str in ignorelist
-            call add(ignores, printf("-g '!%s'", str))
-        endfor
-        let result = systemlist(s:rg.path . " --color never --files --fixed-strings " . join(ignores, ' ') . ' ' . path . ' 2>/dev/null')
-    catch
-        echoerr v:exception
-        return result
-    finally
-        lcd -
-        return result
-    endtry
+    let path = '.'
+    let ignorelist += a:ignorelist
+    let ignores = []
+    for str in ignorelist
+        call add(ignores, printf("-g '!%s'", str))
+    endfor
+    return systemlist(s:rg.path . " --color never --files --fixed-strings " . join(ignores, ' ') . ' ' . path . ' 2>/dev/null')
 endfunction
 
 function! s:rg.find_contents(query) dict
@@ -231,7 +210,7 @@ function! s:fuzzy_grep(str) abort
         return
     endif
 
-    let opts = { 'lines': 12, 'statusfmt': 'FuzzyGrep %s (%d results)', 'root': '.' }
+    let opts = { 'lines': 12, 'statusfmt': 'FuzzyGrep %s (%d '. s:fuzzy_source.name. ')', 'root': '.' }
 
     function! opts.handler(result) abort
         let parts = split(join(a:result), ':')
@@ -262,7 +241,7 @@ function! s:fuzzy_symbol(type, str) abort
     else
         let fzyname = 'fzySymbol'
     endif
-    let opts = { 'lines': 12, 'statusfmt': fzyname. ' %s (%d results)', 'root': '.' }
+    let opts = { 'lines': 12, 'statusfmt': fzyname. ' %s (%d '. s:fuzzy_source.name. ')', 'root': '.' }
 
     function! opts.handler(result) abort
         let parts = split(join(a:result), ' ')
@@ -293,17 +272,35 @@ endfunction
 
 
 function! s:fuzzy_open(root) abort
-    let result = s:fuzzy_source.find(a:root, [])
-    let result_len = len(result)
-    if result_len == 0
-        return
-    elseif result_len == 1
-        call s:fuzzy_open_file(a:root, join(result), '')
+    let root = '.'
+    let result = []
+    try
+        let root = empty(a:root) ? s:fuzzy_getroot() : a:root
+        if root !=# '.'
+            exe 'lcd ' root
+        endif
+
+        let result = s:fuzzy_source.find(a:root, [])
+        let result_len = len(result)
+        if result_len == 0
+            let result = []
+        elseif result_len == 1
+            call s:fuzzy_open_file('', join(result), '')
+            let result = []
+        endif
+    catch
+        echoerr v:exception
+    finally
+        if root !=# '.'
+            lcd -
+        endif
+    endtry
+
+    if empty(result)
         return
     endif
-
     " multiple result feed to fuzzy
-    let opts = { 'lines': 12, 'statusfmt': 'FuzzyOpen %s (%d files)', 'root': a:root }
+    let opts = { 'lines': 12, 'statusfmt': 'FuzzyOpen %s (%d '. s:fuzzy_source.name. ')', 'root': root }
     function! opts.handler(result)
         return { 'name': join(a:result) }
     endfunction
