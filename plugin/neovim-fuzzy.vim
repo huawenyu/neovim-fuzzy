@@ -97,11 +97,9 @@ endfor
 
 " @root is a file name
 function! s:local.find(root, ignorelist) dict
-    if empty(a:root)
-        return systemlist('cat '. s:local.path)
-    else
-        return systemlist("grep '". a:root. "' ". s:local.path. "| grep -v '". expand('%'). "'")
-    endif
+    return empty(a:root) ?
+           \  systemlist('cat '. s:local.path)
+           \  : systemlist("grep '". a:root. "' ". s:local.path. "| grep -v '". expand('%'). "'")
 endfunction
 
 function! s:local.find_contents(query) dict
@@ -124,15 +122,12 @@ function! s:local.find_symbol(type, query) dict
         throw "tagx file not exist!"
     endif
 
-    " other symbols
-    if a:type == 1
-        return systemlist("awk '($2 != \"function\" && $1~/"
-                    \. query. "/) {$1=$2=\"\"; print $0}' ". tagfile)
-    " function
-    else
-        return systemlist("awk '($2 == \"function\" && $1~/"
-                    \. query. "/) {$1=$2=\"\"; print $0}' ". tagfile)
-    endif
+    " 1 symbol, 0 function
+    return a:type == 1 ?
+           \  (systemlist("awk '($2 != \"function\" && $1~/"
+           \             . query. "/) {$1=$2=\"\"; print $0}' ". tagfile))
+           \  : (systemlist("awk '($2 == \"function\" && $1~/"
+           \             . query. "/) {$1=$2=\"\"; print $0}' ". tagfile))
 endfunction
 
 "
@@ -236,34 +231,51 @@ function! s:fuzzy_symbol(type, str) abort
         return
     endif
 
-    if a:type == 0
-        let fzyname = 'fzyFunction'
+    if s:fuzzy_source.name ==# 'local'
+        let fzyname = 
+
+        let opts = { 'lines': 12,
+                    \ 'statusfmt': (a:type == 0 ? 'fzyFunction' : 'fzySymbol'). ' %s (%d '. s:fuzzy_source.name. ')',
+                    \ 'root': '.' }
+
+        function! opts.handler(result) abort
+            let parts = split(join(a:result), ' ')
+            let name = parts[1]
+            let lnum = parts[0]
+            let text = join(parts[2:]) " Not used.
+
+            return { 'name': name, 'lnum': lnum, 'text': text }
+        endfunction
     else
-        let fzyname = 'fzySymbol'
+        let opts = { 'lines': 12, 'statusfmt': 'FuzzyGrep %s (%d '. s:fuzzy_source.name. ')', 'root': '.' }
+
+        function! opts.handler(result) abort
+            let parts = split(join(a:result), ':')
+            let name = parts[0]
+            let lnum = parts[1]
+            let text = parts[2] " Not used.
+
+            return { 'name': name, 'lnum': lnum }
+        endfunction
     endif
-    let opts = { 'lines': 12, 'statusfmt': fzyname. ' %s (%d '. s:fuzzy_source.name. ')', 'root': '.' }
-
-    function! opts.handler(result) abort
-        let parts = split(join(a:result), ' ')
-        let name = parts[1]
-        let lnum = parts[0]
-        let text = join(parts[2:]) " Not used.
-
-        return { 'name': name, 'lnum': lnum, 'text': text }
-    endfunction
 
     return s:fuzzy(contents, opts)
 endfunction
 
 
 function! s:fuzzy_open_file(root, file, lnum) abort
-    if isdirectory(a:root)
-        exe 'lcd' a:root
-        silent execute g:fuzzy_opencmd expand(fnameescape(a:file))
-        lcd -
-    else
-        silent execute g:fuzzy_opencmd expand(fnameescape(a:file))
+
+    let ffile = isdirectory(a:root) ?
+                \  (a:root[-1:] == '/' ?
+                \    (a:root . expand(fnameescape(a:file)))
+                \    : (a:root. '/'. expand(fnameescape(a:file))))
+                \  : expand(fnameescape(a:file))
+
+    if !filereadable(ffile)
+        echomsg 'Fuzzy openfile fail: ' ffile
+        return
     endif
+    silent execute g:fuzzy_opencmd ffile
     if !empty(a:lnum)
         silent execute a:lnum
         normal! zz
@@ -277,7 +289,7 @@ function! s:fuzzy_open(root) abort
     try
         let root = empty(a:root) ? s:fuzzy_getroot() : a:root
         if root !=# '.'
-            exe 'lcd ' root
+            exe 'lcd' root
         endif
 
         let result = s:fuzzy_source.find(a:root, [])
