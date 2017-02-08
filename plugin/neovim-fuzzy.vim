@@ -172,13 +172,15 @@ function! s:rg.find_symbol(type, query) dict
 endfunction
 
 " Set the finder based on available binaries.
-if !empty(s:local.path)
-    let s:fuzzy_source = s:local
-elseif executable(s:rg.path)
-    let s:fuzzy_source = s:rg
-elseif executable(s:ag.path)
-    let s:fuzzy_source = s:ag
-endif
+function! s:fuzzy_init()
+	if !empty(s:local.path)
+		let s:fuzzy_source = s:local
+	elseif executable(s:rg.path)
+		let s:fuzzy_source = s:rg
+	elseif executable(s:ag.path)
+		let s:fuzzy_source = s:ag
+	endif
+endfunction
 
 command! -nargs=? FuzzyGrep   call s:fuzzy_grep(<q-args>)
 command! -nargs=? FuzzyFunc   call s:fuzzy_symbol(0, <q-args>)
@@ -194,6 +196,7 @@ function! s:fuzzy_kill()
 endfunction
 
 function! s:fuzzy_grep(str) abort
+	call s:fuzzy_init()
     let contents = []
     try
         let contents = s:fuzzy_source.find_contents(a:str)
@@ -220,6 +223,7 @@ function! s:fuzzy_grep(str) abort
 endfunction
 
 function! s:fuzzy_symbol(type, str) abort
+	call s:fuzzy_init()
     let contents = []
     try
         let contents = s:fuzzy_source.find_symbol(a:type, a:str)
@@ -232,8 +236,6 @@ function! s:fuzzy_symbol(type, str) abort
     endif
 
     if s:fuzzy_source.name ==# 'local'
-        let fzyname = 
-
         let opts = { 'lines': 12,
                     \ 'statusfmt': (a:type == 0 ? 'fzyFunction' : 'fzySymbol'). ' %s (%d '. s:fuzzy_source.name. ')',
                     \ 'root': '.' }
@@ -264,7 +266,6 @@ endfunction
 
 
 function! s:fuzzy_open_file(root, file, lnum) abort
-
     let ffile = isdirectory(a:root) ?
                 \  (a:root[-1:] == '/' ?
                 \    (a:root . expand(fnameescape(a:file)))
@@ -284,6 +285,7 @@ endfunction
 
 
 function! s:fuzzy_open(root) abort
+	call s:fuzzy_init()
     let root = '.'
     let result = []
     try
