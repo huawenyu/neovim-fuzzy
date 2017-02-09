@@ -173,13 +173,29 @@ endfunction
 
 " Set the finder based on available binaries.
 function! s:fuzzy_init()
-	if !empty(s:local.path)
-		let s:fuzzy_source = s:local
-	elseif executable(s:rg.path)
-		let s:fuzzy_source = s:rg
-	elseif executable(s:ag.path)
-		let s:fuzzy_source = s:ag
-	endif
+    let cdir = fnamemodify('.', ':p:h')
+    if cdir ==# $HOME || cdir ==# '/'
+        echomsg "Fuzzy refuse working for cwd=". cdir
+        return 0
+    endif
+    if len(split(cdir, '/')) < 3
+        let ans = input("Fuzzy on ". cdir. " ? ", "Yes|No")
+        if ans !=# 'Yes'
+            return 0
+        endif
+    endif
+
+    if !empty(s:local.path)
+        let s:fuzzy_source = s:local
+    elseif executable(s:rg.path)
+        let s:fuzzy_source = s:rg
+    elseif executable(s:ag.path)
+        let s:fuzzy_source = s:ag
+    else
+        echomsg "Fuzzy cann't find fuzzy-instance."
+        return 0
+    endif
+    return 1
 endfunction
 
 command! -nargs=? FuzzyGrep   call s:fuzzy_grep(<q-args>)
@@ -196,7 +212,10 @@ function! s:fuzzy_kill()
 endfunction
 
 function! s:fuzzy_grep(str) abort
-	call s:fuzzy_init()
+    if s:fuzzy_init() == 0
+        return
+    endif
+
     let contents = []
     try
         let contents = s:fuzzy_source.find_contents(a:str)
@@ -223,7 +242,16 @@ function! s:fuzzy_grep(str) abort
 endfunction
 
 function! s:fuzzy_symbol(type, str) abort
-	call s:fuzzy_init()
+    if s:fuzzy_init() == 0
+        return
+    endif
+    if s:fuzzy_source.name !=# 'local'
+        if a:type == 0
+            echomsg "Fuzzy '". s:fuzzy_source.name. "' cann't implemate function."
+            return
+        endif
+    endif
+
     let contents = []
     try
         let contents = s:fuzzy_source.find_symbol(a:type, a:str)
@@ -285,7 +313,9 @@ endfunction
 
 
 function! s:fuzzy_open(root) abort
-	call s:fuzzy_init()
+    if s:fuzzy_init() == 0
+        return
+    endif
     let root = '.'
     let result = []
     try
