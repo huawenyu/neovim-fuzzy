@@ -320,7 +320,7 @@ function! s:fuzzy_open(root) abort
     let result = []
     try
         let root = empty(a:root) ? s:fuzzy_getroot() : a:root
-        if root !=# '.'
+        if root !=# '.' && isdirectory(root)
             exe 'lcd' root
         endif
 
@@ -335,7 +335,7 @@ function! s:fuzzy_open(root) abort
     catch
         echoerr v:exception
     finally
-        if root !=# '.'
+        if root !=# '.' && isdirectory(root)
             lcd -
         endif
     endtry
