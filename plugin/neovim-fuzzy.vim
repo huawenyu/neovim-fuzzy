@@ -319,14 +319,19 @@ function! s:fuzzy_open(root) abort
     let root = '.'
     let result = []
     try
-        let root = empty(a:root) ? s:fuzzy_getroot() : a:root
-        if root !=# '.' && isdirectory(root)
-            exe 'lcd' root
-        endif
-
+        " Locate current-dir by cscope.files
         let result = s:fuzzy_source.find(a:root, [])
         let result_len = len(result)
-        if result_len == 0
+        if result_len <= 1
+            let root = empty(a:root) ? s:fuzzy_getroot() : a:root
+            if root !=# '.' && isdirectory(root)
+                exe 'lcd' root
+            endif
+            let result = s:fuzzy_source.find(a:root, [])
+            let result_len = len(result)
+        endif
+
+        if result_len <= 1
             let result = []
         elseif result_len == 1
             call s:fuzzy_open_file('', join(result), '')
