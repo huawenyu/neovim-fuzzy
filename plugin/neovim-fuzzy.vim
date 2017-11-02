@@ -95,11 +95,24 @@ for i in g:fuzzy_file_list
     endif
 endfor
 
+function! Test()
+   echo a
+endfunction
+
 " @root is a file name
 function! s:local.find(root, ignorelist) dict
-    return empty(a:root) ?
-           \  systemlist('cat '. s:local.path)
-           \  : systemlist("grep '". a:root. "' ". s:local.path. "| grep -v '". expand('%'). "'")
+    if empty(a:root)
+        if filereadable(s:local.path)
+            return systemlist('cat '. s:local.path)
+        else
+            let f_list = findfile(s:local.path, ".;")
+            if filereadable(f_list)
+                return systemlist('cat '. f_list)
+            endif
+        endif
+    else
+        return systemlist("grep '". a:root. "' ". s:local.path. "| grep -v '". expand('%'). "'")
+    endif
 endfunction
 
 function! s:local.find_contents(query) dict
@@ -322,7 +335,7 @@ function! s:fuzzy_open(root) abort
         " Locate current-dir by cscope.files
         let result = s:fuzzy_source.find(a:root, [])
         let result_len = len(result)
-        if result_len <= 1
+        if result_len <= 0
             let root = empty(a:root) ? s:fuzzy_getroot() : a:root
             if root !=# '.' && isdirectory(root)
                 exe 'lcd' root
@@ -331,8 +344,9 @@ function! s:fuzzy_open(root) abort
             let result_len = len(result)
         endif
 
-        if result_len <= 1
+        if result_len <= 0
             let result = []
+        " Toggle source/header file
         elseif result_len == 1
             call s:fuzzy_open_file('', join(result), '')
             let result = []
