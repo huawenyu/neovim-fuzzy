@@ -167,7 +167,7 @@ let s:rg = { 'name': 'rg', 'path': 'rg' }
 
 function! s:rg.find(root, ignorelist) dict
     let path = '.'
-    let ignorelist += a:ignorelist
+    let ignorelist = a:ignorelist
     let ignores = []
     for str in ignorelist
         call add(ignores, printf("-g '!%s'", str))
